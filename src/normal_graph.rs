@@ -1,12 +1,16 @@
 #![allow(unused_imports)]
+use nalgebra as na;
+use std::collections::HashMap;
 use std::fmt;
 use std::io::Write;
 
+use super::general_graph::GeneralUndiGraph;
+
 pub struct NormalUndiGraph {
-    name: String,
-    n: usize,
-    m: usize,
-    adjs: Vec<Vec<usize>>,
+    pub name: String,
+    pub n: usize,
+    pub m: usize,
+    pub adjs: Vec<Vec<usize>>,
 }
 
 impl fmt::Display for NormalUndiGraph {
@@ -27,6 +31,73 @@ impl fmt::Display for NormalUndiGraph {
 }
 
 impl NormalUndiGraph {
+    pub fn diag_adj(&self) -> (na::DVector<f64>, na::DMatrix<f64>) {
+        let diag_vec: na::DVector<f64> =
+            na::DVector::from_iterator(self.n, self.adjs.iter().map(|adj| adj.len() as f64));
+        let mut adj_mat: na::DMatrix<f64> = na::DMatrix::zeros(self.n, self.n);
+        for (u, adj) in self.adjs.iter().enumerate() {
+            let i = adj.partition_point(|v| v <= &u);
+            for &v in adj[i..].iter() {
+                adj_mat[(u, v)] += 1f64;
+                adj_mat[(v, u)] += 1f64;
+            }
+        }
+        return (diag_vec, adj_mat);
+    }
+    pub fn from_general(g: &GeneralUndiGraph) -> Self {
+        let n = g.num_nodes();
+        if n == 0 {
+            return Self {
+                name: "EmptyGraph".to_string(),
+                n: 0,
+                m: 0,
+                adjs: Vec::new(),
+            };
+        }
+        let mut degs = vec![0usize; n];
+        let mut o2n: HashMap<usize, usize> = HashMap::new();
+        let renumber = g.nodes.iter().max().unwrap() + 1 != n;
+        if renumber {
+            for &(u, v) in &g.edges {
+                let tot = o2n.len();
+                let &mut new_u = o2n.entry(u).or_insert(tot);
+                let tot = o2n.len();
+                let &mut new_v = o2n.entry(v).or_insert(tot);
+                degs[new_u] += 1;
+                degs[new_v] += 1;
+            }
+        } else {
+            for &(u, v) in &g.edges {
+                degs[u] += 1;
+                degs[v] += 1;
+            }
+        }
+        let mut adjs: Vec<Vec<usize>> = Vec::with_capacity(n);
+        for u in 0..n {
+            adjs.push(Vec::with_capacity(degs[u]));
+        }
+        if renumber {
+            for &(u, v) in &g.edges {
+                let (new_u, new_v) = (o2n[&u], o2n[&v]);
+                adjs[new_u].push(new_v);
+                adjs[new_v].push(new_u);
+            }
+        } else {
+            for &(u, v) in &g.edges {
+                adjs[u].push(v);
+                adjs[v].push(u);
+            }
+        }
+        for u in 0..n {
+            adjs[u].sort_unstable();
+        }
+        Self {
+            name: g.name.clone(),
+            n,
+            m: g.num_edges(),
+            adjs,
+        }
+    }
     pub fn from_apollo(g: usize) -> Self {
         let mut triangles: Vec<(usize, usize, usize)> =
             vec![(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)];
@@ -143,5 +214,32 @@ mod tests {
         let mut wf = File::create("apollo_4.txt").unwrap();
         let g = NormalUndiGraph::from_apollo(4);
         write!(wf, "{}", g).unwrap();
+    }
+
+    #[test]
+    fn test_konect_euro() {
+        use super::super::general_graph::GeneralUndiGraph;
+        let mut wf = File::create("test_konect_euro_normal.txt").unwrap();
+        let g = GeneralUndiGraph::from_konect("euro", "subelj_euroroad")
+            .unwrap()
+            .lcc();
+        let g = NormalUndiGraph::from_general(&g);
+        write!(wf, "{}", g).unwrap();
+    }
+
+    #[test]
+    fn test_diag_adj() {
+        use super::super::general_graph::GeneralUndiGraph;
+        let path = "test_diag_adj_input.txt";
+        let mut wf = File::create(path).unwrap();
+        write!(wf, "0 1\n0 2\n0 3\n1 3\n").unwrap();
+        let rf = File::open(path).unwrap();
+        let g = GeneralUndiGraph::from_file("test_diag_adj", rf);
+        std::fs::remove_file(path).unwrap();
+        let g = NormalUndiGraph::from_general(&g);
+        let (diag, adj) = g.diag_adj();
+        let lap = na::DMatrix::from_diagonal(&diag) - adj;
+        let mut wf = File::create("test_diag_adj_output.txt").unwrap();
+        writeln!(wf, "lap:\n{}", lap).unwrap();
     }
 }

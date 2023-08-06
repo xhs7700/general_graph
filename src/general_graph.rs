@@ -64,7 +64,7 @@ impl FastDSU {
         }
     }
     fn retain_map(&self) -> HashMap<usize, bool> {
-        let (root, root_num) = self
+        let (root, _) = self
             .parent
             .iter()
             .max_by_key(|(_, y)| match y {
@@ -73,10 +73,6 @@ impl FastDSU {
             })
             .unwrap();
         let root = *root;
-        println!("root = {}", root);
-        if let Num(num) = root_num {
-            println!("root_num = {}", num);
-        }
         let retain_iter = self.parent.keys().map(|x| (*x, self.find(x) == root));
         let retain_vec: Vec<(usize, bool)> = retain_iter.clone().collect();
         let mut wf = File::create("retain_iter.txt").unwrap();
@@ -121,9 +117,9 @@ async fn fetch_raw_bytes(url: &str) -> Result<Vec<u8>, String> {
 }
 
 pub struct GeneralUndiGraph {
-    name: String,
-    nodes: HashSet<usize>,
-    edges: HashSet<(usize, usize)>,
+    pub name: String,
+    pub nodes: HashSet<usize>,
+    pub edges: HashSet<(usize, usize)>,
 }
 
 impl fmt::Display for GeneralUndiGraph {
@@ -244,6 +240,13 @@ mod tests {
         let rf = File::open("subelj_euroroad.txt").unwrap();
         let mut wf = File::create("euro.txt").unwrap();
         let g = GeneralUndiGraph::from_file("euro", rf).lcc();
+        write!(wf, "{}", g).unwrap();
+    }
+
+    #[test]
+    fn test_konect_euro() {
+        let g = GeneralUndiGraph::from_konect("euro", "subelj_euroroad").unwrap();
+        let mut wf = File::create("test_konect_euro.txt").unwrap();
         write!(wf, "{}", g).unwrap();
     }
 }
